@@ -1,4 +1,5 @@
 use std::{
+    env,
     ffi::CStr,
     fs,
     io::{BufRead, BufReader, Read, Write},
@@ -53,6 +54,10 @@ enum Kind {
 fn main() -> Result<()> {
     let args = Args::parse();
 
+    // 打印当前目录
+    let current_dir = env::current_dir().context("failed to get current directory")?;
+    println!("Current directory: {}", current_dir.display());
+
     match args.cmd {
         Commands::Init => {
             fs::create_dir(".git").unwrap();
@@ -72,8 +77,6 @@ fn main() -> Result<()> {
                 &object_hash[2..]
             ))
             .context("read in .git/objects")?;
-            let file_size = f.metadata()?.len() as usize;
-
             let decoder = ZlibDecoder::new(f);
             let mut reader = BufReader::new(decoder);
             let mut buf = Vec::new();
@@ -96,28 +99,16 @@ fn main() -> Result<()> {
             };
 
             let size = size
-                .parse::<usize>()
+                .parse::<u64>()
                 .context(".git/objects file header has invalid size: {size}")?;
-            buf.clear();
-            buf.reserve_exact(size);
-            buf.resize(size, 0);
-            reader
-                .read_exact(&mut buf[..])
-                .context("read true contents of .git/objects file")?;
-            let n = reader
-                .read(&mut [0])
-                .context("validate EFO in .git/objects file")?;
-            anyhow::ensure!(
-                n == 0,
-                "trailing {n} garbage bytes after .git/objects file contents"
-            );
-            let stdout = std::io::stdout();
-            let mut stdout = stdout.lock();
-
+            let mut reader = reader.take(size);
             match kind {
-                Kind::Blob => stdout
-                    .write_all(&buf)
-                    .context("write object contents to stdout")?,
+                Kind::Blob => {
+                    let stdout = std::io::stdout();
+                    let mut stdout = stdout.lock();
+                    let n = std::io::copy(&mut reader, &mut stdout).context("write .git/objects file to stdout")?;
+                    anyhow::ensure!(n == size, ".git/objects file was not the expected size (expected: {size}, actual: {n})");
+                }
                 _ => unimplemented!(),
             }
         }
