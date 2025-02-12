@@ -37,8 +37,12 @@ enum Commands {
     },
 
     LsTree {
-        #[arg(long)]
+        #[arg(short)]
         name_only: bool,
+
+        /// tree hash to print
+        #[arg(value_parser = validate_object_hash)]
+        tree_hash: String,
     },
 }
 
@@ -69,7 +73,10 @@ fn main() -> Result<()> {
             object_hash,
         } => commands::cat_file::invoke(pretty_print, &object_hash)?,
         Commands::HashObject { write, file } => commands::hash_object::invoke(write, &file)?,
-        Commands::LsTree { name_only } => commands::ls_tree::invoke(name_only)?,
+        Commands::LsTree {
+            name_only,
+            tree_hash,
+        } => commands::ls_tree::invoke(name_only, &tree_hash)?,
     }
     Ok(())
 }
