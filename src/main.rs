@@ -44,6 +44,8 @@ enum Commands {
         #[arg(value_parser = validate_object_hash)]
         tree_hash: String,
     },
+
+    WriteTree,
 }
 
 /// Validate that the object hash is a valid SHA-1 hash
@@ -77,6 +79,7 @@ fn main() -> Result<()> {
             name_only,
             tree_hash,
         } => commands::ls_tree::invoke(name_only, &tree_hash)?,
+        Commands::WriteTree => commands::write_tree::invoke()?,
     }
     Ok(())
 }
