@@ -4,7 +4,7 @@ use std::{io::Cursor, os::unix::fs::PermissionsExt, path::Path};
 
 use crate::objects::{Kind, Object};
 
-fn write_tree_for(path: &Path) -> Result<Option<[u8; 20]>> {
+pub(crate) fn write_tree_for(path: &Path) -> Result<Option<[u8; 20]>> {
     let mut entries = std::fs::read_dir(path)
         .with_context(|| format!("open directory {}", path.display()))?
         .collect::<std::io::Result<Vec<_>>>()

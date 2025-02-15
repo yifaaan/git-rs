@@ -1,9 +1,9 @@
 use crate::objects::{Kind, Object};
 use anyhow::{Context, Result};
 
-pub fn invoke(pretty_print: bool, object_hash: &str) -> Result<()> {
+pub fn invoke(pretty_print: bool, object_hash: String) -> Result<()> {
     anyhow::ensure!(pretty_print, "pretty printing is not yet implemented");
-    let mut object = Object::read(object_hash).context("parse out blob object file")?;
+    let mut object = Object::read(&object_hash).context("parse out blob object file")?;
 
     match object.kind {
         Kind::Blob => {

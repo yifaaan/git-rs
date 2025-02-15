@@ -4,8 +4,8 @@ use std::io::{BufRead, Read, Write};
 
 use crate::objects::{Kind, Object};
 
-pub fn invoke(name_only: bool, tree_hash: &str) -> Result<()> {
-    let mut object = Object::read(tree_hash).context("parse out tree object file")?;
+pub fn invoke(name_only: bool, tree_hash: String) -> Result<()> {
+    let mut object = Object::read(&tree_hash).context("parse out tree object file")?;
 
     match object.kind {
         Kind::Tree => {
