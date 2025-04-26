@@ -1,14 +1,22 @@
 use std::{
     ffi::CStr,
+    fs,
     io::{BufRead, BufReader, Read, Write},
     path::Path,
 };
 
-use anyhow::{Context, Result};
-use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
+use anyhow::{bail, Context, Result};
+use flate2::{
+    read::{GzDecoder, ZlibDecoder},
+    write::ZlibEncoder,
+    Compression,
+};
 use sha1::{Digest, Sha1};
 
-use crate::commands::hash_object::HashWriter;
+use crate::{
+    commands::hash_object::HashWriter,
+    repository::{repo_file, GitRepository},
+};
 
 #[derive(Debug)]
 pub(crate) enum Kind {
@@ -115,5 +123,118 @@ impl<R: Read> Object<R> {
         )
         .context("move blob file into .git/objects")?;
         Ok(hash)
+    }
+}
+
+trait GitObject {
+    fn serialize(&self) -> Vec<u8>;
+    fn deserialize(&self, buf: &[u8]) -> Box<dyn GitObject>;
+}
+
+struct GitCommit {}
+
+impl GitCommit {
+    fn build<R: std::io::Read>(reader: R) -> Result<Self> {
+        todo!()
+    }
+}
+
+impl GitObject for GitCommit {
+    fn deserialize(&self, buf: &[u8]) -> Box<dyn GitObject> {
+        todo!()
+    }
+
+    fn serialize(&self) -> Vec<u8> {
+        todo!()
+    }
+}
+
+struct GitTree {}
+
+impl GitTree {
+    fn build<R: std::io::Read>(reader: R) -> Result<Self> {
+        todo!()
+    }
+}
+
+impl GitObject for GitTree {
+    fn deserialize(&self, buf: &[u8]) -> Box<dyn GitObject> {
+        todo!()
+    }
+
+    fn serialize(&self) -> Vec<u8> {
+        todo!()
+    }
+}
+struct GitTag {}
+
+impl GitTag {
+    fn build<R: std::io::Read>(reader: R) -> Result<Self> {
+        todo!()
+    }
+}
+
+impl GitObject for GitTag {
+    fn deserialize(&self, buf: &[u8]) -> Box<dyn GitObject> {
+        todo!()
+    }
+
+    fn serialize(&self) -> Vec<u8> {
+        todo!()
+    }
+}
+
+struct GitBlob {}
+
+impl GitBlob {
+    fn build<R: std::io::Read>(reader: R) -> Result<Self> {
+        todo!()
+    }
+}
+
+impl GitObject for GitBlob {
+    fn deserialize(&self, buf: &[u8]) -> Box<dyn GitObject> {
+        todo!()
+    }
+
+    fn serialize(&self) -> Vec<u8> {
+        todo!()
+    }
+}
+
+pub fn object_read(git_repo: &GitRepository, sha: &str) -> Result<Option<Box<dyn GitObject>>> {
+    let path = repo_file(git_repo, &[&sha[0..2], &sha[2..]], false)?;
+    if !path.is_file() {
+        return Ok(None);
+    }
+    use std::io::prelude::*;
+    let f = fs::File::open(path)?;
+    let mut d = GzDecoder::new(f);
+    // let mut decompressed = Vec::new();
+    // d.read_to_end(&mut decompressed)?;
+    let mut reader = BufReader::new(d);
+
+    let mut obj_type = Vec::new();
+    let obj_type_len = reader.read_until(b' ', &mut obj_type)?;
+    obj_type.pop();
+    let obj_type = std::str::from_utf8(&obj_type)?;
+
+    let mut obj_size = Vec::new();
+    let mut obj_size_len = reader.read_until(b'0', &mut obj_size)?;
+    obj_size.pop();
+    let obj_size = std::str::from_utf8(&obj_size)?.parse::<usize>()?;
+
+    let mut data = Vec::new();
+    let data_len = reader.read_to_end(&mut data)?;
+    if obj_size != data_len {
+        bail!("Malformed object {}: bad length", sha);
+    }
+
+    match obj_type {
+        "commit" => Ok(Some(Box::new(GitCommit::build(reader)?))),
+        "tree" => Ok(Some(Box::new(GitTree::build(reader)?))),
+        "tag" => Ok(Some(Box::new(GitTag::build(reader)?))),
+        "blob" => Ok(Some(Box::new(GitBlob::build(reader)?))),
+        _ => bail!("Unknown object type {}", obj_type),
     }
 }
