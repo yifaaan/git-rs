@@ -129,9 +129,12 @@ impl<R: Read> Object<R> {
 trait GitObject {
     fn serialize(&self) -> Vec<u8>;
     fn deserialize(&self, buf: &[u8]) -> Box<dyn GitObject>;
+    fn format(&self) -> &str;
 }
 
-struct GitCommit {}
+struct GitCommit {
+    format: String,
+}
 
 impl GitCommit {
     fn build<R: std::io::Read>(reader: R) -> Result<Self> {
@@ -147,9 +150,15 @@ impl GitObject for GitCommit {
     fn serialize(&self) -> Vec<u8> {
         todo!()
     }
+
+    fn format(&self) -> &str {
+        return &self.format;
+    }
 }
 
-struct GitTree {}
+struct GitTree {
+    format: String,
+}
 
 impl GitTree {
     fn build<R: std::io::Read>(reader: R) -> Result<Self> {
@@ -165,8 +174,14 @@ impl GitObject for GitTree {
     fn serialize(&self) -> Vec<u8> {
         todo!()
     }
+
+    fn format(&self) -> &str {
+        return &self.format;
+    }
 }
-struct GitTag {}
+struct GitTag {
+    format: String,
+}
 
 impl GitTag {
     fn build<R: std::io::Read>(reader: R) -> Result<Self> {
@@ -182,9 +197,15 @@ impl GitObject for GitTag {
     fn serialize(&self) -> Vec<u8> {
         todo!()
     }
+
+    fn format(&self) -> &str {
+        return &self.format;
+    }
 }
 
-struct GitBlob {}
+struct GitBlob {
+    format: String,
+}
 
 impl GitBlob {
     fn build<R: std::io::Read>(reader: R) -> Result<Self> {
@@ -199,6 +220,10 @@ impl GitObject for GitBlob {
 
     fn serialize(&self) -> Vec<u8> {
         todo!()
+    }
+
+    fn format(&self) -> &str {
+        return &self.format;
     }
 }
 
@@ -237,4 +262,39 @@ pub fn object_read(git_repo: &GitRepository, sha: &str) -> Result<Option<Box<dyn
         "blob" => Ok(Some(Box::new(GitBlob::build(reader)?))),
         _ => bail!("Unknown object type {}", obj_type),
     }
+}
+
+fn object_write(obj: impl GitObject, git_repo: Option<&GitRepository>) -> Result<Vec<u8>> {
+    let data = obj.serialize();
+    let mut result = Vec::new();
+    result.extend_from_slice(obj.format().as_bytes());
+    result.push(b' ');
+    result.extend_from_slice(&data.len().to_be_bytes());
+    result.push(b'0');
+    result.extend_from_slice(&data);
+
+    use sha1::{Digest, Sha1};
+
+    let mut hasher = Sha1::new();
+    hasher.update(&result);
+    let result = hasher.finalize();
+    if let Some(repo) = git_repo {
+        let path = repo_file(
+            repo,
+            &[
+                "objects",
+                std::str::from_utf8(&result[0..2])?,
+                std::str::from_utf8(&result[2..])?,
+            ],
+            true,
+        )?;
+        if !path.exists() {
+            let mut f = std::fs::File::options()
+                .write(true)
+                .create(true)
+                .open(path)?;
+            f.write_all(&result)?;
+        }
+    }
+    Ok(result.to_vec())
 }
