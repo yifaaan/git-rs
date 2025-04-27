@@ -1,24 +1,15 @@
-use crate::objects::{Kind, Object};
-use anyhow::{Context, Result};
+use std::io::Write;
 
-pub fn invoke(pretty_print: bool, object_hash: String) -> Result<()> {
-    anyhow::ensure!(pretty_print, "pretty printing is not yet implemented");
-    let mut object = Object::read(&object_hash).context("parse out blob object file")?;
+use crate::{
+    objects::{object_find, object_read},
+    repository::repo_find,
+    ObjectType,
+};
+use anyhow::Result;
 
-    match object.kind {
-        Kind::Blob => {
-            let stdout = std::io::stdout();
-            let mut stdout = stdout.lock();
-            let n = std::io::copy(&mut object.reader, &mut stdout)
-                .context("write .git/objects file to stdout")?;
-            anyhow::ensure!(
-                n == object.expected_size,
-                ".git/objects file was not the expected size (expected: {}, actual: {})",
-                object.expected_size,
-                n
-            );
-        }
-        _ => anyhow::bail!("don't know how to print {}", object.kind),
-    }
+pub(crate) fn cmd_cat_file(tp: ObjectType, obj: String) -> Result<()> {
+    let repo = repo_find(".", true)?;
+    let obj = object_read(&repo, &object_find(&repo, obj, tp)?)?;
+    std::io::stdout().write_all(&obj.serialize())?;
     Ok(())
 }

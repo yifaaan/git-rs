@@ -1,9 +1,16 @@
-use std::{io::Write, path::Path};
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
 use sha1::{Digest, Sha1};
 
-use crate::objects::Object;
+use crate::{
+    objects::{object_hash, Object},
+    repository::repo_find,
+    ObjectType,
+};
 
 pub(crate) struct HashWriter<W> {
     pub(crate) writer: W,
@@ -35,5 +42,16 @@ pub(crate) fn invoke(write: bool, file: &Path) -> Result<()> {
         hash
     };
     println!("{}", hex::encode(hash));
+    Ok(())
+}
+
+pub(crate) fn cmd_hash_object(write: bool, object_type: ObjectType, file: PathBuf) -> Result<()> {
+    let mut repo = None;
+    if write {
+        repo = Some(repo_find(".", true)?);
+    }
+
+    let data = object_hash(repo, file, object_type)?;
+    println!("{:?}", data);
     Ok(())
 }

@@ -6,8 +6,10 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{value_parser, Parser, Subcommand, ValueEnum};
+use commands::{cat_file::cmd_cat_file, hash_object::cmd_hash_object, init::cmd_init};
 use ini::Ini;
+use objects::ObjectType;
 use repository::repo_create;
 
 mod commands;
@@ -29,22 +31,27 @@ enum Commands {
         path: Option<PathBuf>,
     },
 
+    /// Provide content of repository objects.
     CatFile {
-        /// Pretty print the object
-        #[arg(short, long)]
-        pretty_print: bool,
+        /// Specify the type.
+        #[arg(value_parser = value_parser!(ObjectType))]
+        object_type: ObjectType,
 
-        /// Object hash to print
-        #[arg(value_parser = validate_object_hash)]
-        object_hash: String,
+        /// The object to display.
+        object: String,
     },
 
+    /// Compute object ID and optionally creates a blob from a file.
     HashObject {
-        /// Write the object into the git database
+        /// Write the object into the git database.
         #[arg(short, long)]
         write: bool,
 
-        /// File to hash
+        /// Specify the type.
+        #[arg(short, long, default_value_t = ObjectType::Blob, value_parser = value_parser!(ObjectType))]
+        object_type: ObjectType,
+
+        /// Read the object from a file.
         file: PathBuf,
     },
 
@@ -92,56 +99,57 @@ fn validate_object_hash(s: &str) -> Result<String, String> {
 fn main() -> Result<()> {
     let args = Args::parse();
     match args.cmd {
-        Commands::Init { path } => {
-            if let Some(p) = path {
-                repo_create(p)?;
-            } else {
-                repo_create(".")?;
-            }
-        }
+        Commands::Init { path } => cmd_init(path)?,
         Commands::CatFile {
-            pretty_print,
-            object_hash,
-        } => commands::cat_file::invoke(pretty_print, object_hash)?,
-        Commands::HashObject { write, file } => commands::hash_object::invoke(write, &file)?,
-        Commands::LsTree {
-            name_only,
-            tree_hash,
-        } => commands::ls_tree::invoke(name_only, tree_hash)?,
-        Commands::WriteTree => commands::write_tree::invoke()?,
-        Commands::CommitTree {
-            message,
-            parent_tree_hash,
-            tree_hash,
-        } => commands::commit_tree::invoke(message, tree_hash, parent_tree_hash)?,
-        Commands::Commit { message } => {
-            let head_ref = std::fs::read_to_string(".git/HEAD").context("read HEAD")?;
-            let Some(head_ref) = head_ref.strip_prefix("ref: ") else {
-                anyhow::bail!("refusing to commit onto detached HEAD");
-            };
-            let head_ref = head_ref.trim();
+            r#object_type,
+            object,
+        } => cmd_cat_file(object_type, object)?,
+        Commands::HashObject {
+            write,
+            object_type,
+            file,
+        } => cmd_hash_object(write, object_type, file)?,
+        // Commands::LsTree {
+        //     name_only,
+        //     tree_hash,
+        // } => commands::ls_tree::invoke(name_only, tree_hash)?,
+        // Commands::WriteTree => commands::write_tree::invoke()?,
+        // Commands::CommitTree {
+        //     message,
+        //     parent_tree_hash,
+        //     tree_hash,
+        // } => commands::commit_tree::invoke(message, tree_hash, parent_tree_hash)?,
+        // Commands::Commit { message } => {
+        //     let head_ref = std::fs::read_to_string(".git/HEAD").context("read HEAD")?;
+        //     let Some(head_ref) = head_ref.strip_prefix("ref: ") else {
+        //         anyhow::bail!("refusing to commit onto detached HEAD");
+        //     };
+        //     let head_ref = head_ref.trim();
 
-            let parent_hash = std::fs::read_to_string(format!(".git/{head_ref}"))
-                .with_context(|| format!("read HEAD reference target {head_ref}"))?;
-            let parent_hash = parent_hash.trim();
+        //     let parent_hash = std::fs::read_to_string(format!(".git/{head_ref}"))
+        //         .with_context(|| format!("read HEAD reference target {head_ref}"))?;
+        //     let parent_hash = parent_hash.trim();
 
-            let Some(tree_hash) =
-                commands::write_tree::write_tree_for(Path::new(".")).context("write tree")?
-            else {
-                eprintln!("not committing empty tree");
-                return Ok(());
-            };
+        //     let Some(tree_hash) =
+        //         commands::write_tree::write_tree_for(Path::new(".")).context("write tree")?
+        //     else {
+        //         eprintln!("not committing empty tree");
+        //         return Ok(());
+        //     };
 
-            let commit_hash = commands::commit_tree::write_commit(
-                &message,
-                &hex::encode(tree_hash),
-                Some(&hex::encode(parent_hash)),
-            )
-            .context("create commit")?;
-            let commit_hash = hex::encode(commit_hash);
-            std::fs::write(format!(".git/{head_ref}"), &commit_hash)
-                .with_context(|| format!("update HEAD reference target {head_ref}"))?;
-            println!("HEAD is now at {commit_hash}");
+        //     let commit_hash = commands::commit_tree::write_commit(
+        //         &message,
+        //         &hex::encode(tree_hash),
+        //         Some(&hex::encode(parent_hash)),
+        //     )
+        //     .context("create commit")?;
+        //     let commit_hash = hex::encode(commit_hash);
+        //     std::fs::write(format!(".git/{head_ref}"), &commit_hash)
+        //         .with_context(|| format!("update HEAD reference target {head_ref}"))?;
+        //     println!("HEAD is now at {commit_hash}");
+        // }
+        _ => {
+            unimplemented!()
         }
     }
     Ok(())

@@ -148,7 +148,7 @@ pub fn repo_create(path: impl AsRef<Path>) -> Result<GitRepository> {
 }
 
 /// Find the root of current repository.
-fn repo_find(path: impl AsRef<Path>, required: bool) -> Result<GitRepository> {
+pub fn repo_find(path: impl AsRef<Path>, required: bool) -> Result<GitRepository> {
     fn get_real_path(path: impl AsRef<Path>) -> Result<PathBuf> {
         let path = if path.as_ref().is_symlink() {
             path.as_ref().read_link()?

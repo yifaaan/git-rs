@@ -1,11 +1,13 @@
 use std::{
     ffi::CStr,
+    fmt::Display,
     fs,
     io::{BufRead, BufReader, Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use anyhow::{bail, Context, Result};
+use clap::ValueEnum;
 use flate2::{
     read::{GzDecoder, ZlibDecoder},
     write::ZlibEncoder,
@@ -126,61 +128,80 @@ impl<R: Read> Object<R> {
     }
 }
 
-trait GitObject {
+#[derive(Debug, ValueEnum, Clone)]
+pub(crate) enum ObjectType {
+    Blob,
+    Tree,
+    Commit,
+    Tag,
+}
+
+impl Display for ObjectType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ObjectType::Blob => write!(f, "blob"),
+            ObjectType::Tree => write!(f, "tree"),
+            ObjectType::Commit => write!(f, "commit"),
+            ObjectType::Tag => write!(f, "tag"),
+        }
+    }
+}
+
+pub trait GitObject {
     fn serialize(&self) -> Vec<u8>;
-    fn deserialize(&self, buf: &[u8]) -> Box<dyn GitObject>;
+    fn deserialize(buf: &[u8]) -> Box<dyn GitObject>
+    where
+        Self: Sized;
     fn format(&self) -> &str;
 }
 
 struct GitCommit {
-    format: String,
+    data: Vec<u8>,
 }
 
-impl GitCommit {
-    fn build<R: std::io::Read>(reader: R) -> Result<Self> {
-        todo!()
-    }
-}
+impl GitCommit {}
 
 impl GitObject for GitCommit {
-    fn deserialize(&self, buf: &[u8]) -> Box<dyn GitObject> {
-        todo!()
+    fn deserialize(buf: &[u8]) -> Box<dyn GitObject>
+    where
+        Self: Sized,
+    {
+        Box::new(Self { data: buf.to_vec() })
     }
 
     fn serialize(&self) -> Vec<u8> {
-        todo!()
+        self.data.clone()
     }
 
     fn format(&self) -> &str {
-        return &self.format;
+        return "commit";
     }
 }
 
 struct GitTree {
-    format: String,
+    data: Vec<u8>,
 }
 
-impl GitTree {
-    fn build<R: std::io::Read>(reader: R) -> Result<Self> {
-        todo!()
-    }
-}
+impl GitTree {}
 
 impl GitObject for GitTree {
-    fn deserialize(&self, buf: &[u8]) -> Box<dyn GitObject> {
-        todo!()
+    fn deserialize(buf: &[u8]) -> Box<dyn GitObject>
+    where
+        Self: Sized,
+    {
+        Box::new(Self { data: buf.to_vec() })
     }
 
     fn serialize(&self) -> Vec<u8> {
-        todo!()
+        self.data.clone()
     }
 
     fn format(&self) -> &str {
-        return &self.format;
+        return "tree";
     }
 }
 struct GitTag {
-    format: String,
+    data: Vec<u8>,
 }
 
 impl GitTag {
@@ -190,21 +211,24 @@ impl GitTag {
 }
 
 impl GitObject for GitTag {
-    fn deserialize(&self, buf: &[u8]) -> Box<dyn GitObject> {
-        todo!()
+    fn deserialize(buf: &[u8]) -> Box<dyn GitObject>
+    where
+        Self: Sized,
+    {
+        Box::new(Self { data: buf.to_vec() })
     }
 
     fn serialize(&self) -> Vec<u8> {
-        todo!()
+        self.data.clone()
     }
 
     fn format(&self) -> &str {
-        return &self.format;
+        return "tag";
     }
 }
 
 struct GitBlob {
-    format: String,
+    data: Vec<u8>,
 }
 
 impl GitBlob {
@@ -214,25 +238,27 @@ impl GitBlob {
 }
 
 impl GitObject for GitBlob {
-    fn deserialize(&self, buf: &[u8]) -> Box<dyn GitObject> {
-        todo!()
+    fn deserialize(buf: &[u8]) -> Box<dyn GitObject>
+    where
+        Self: Sized,
+    {
+        Box::new(Self { data: buf.to_vec() })
     }
 
     fn serialize(&self) -> Vec<u8> {
-        todo!()
+        self.data.clone()
     }
 
     fn format(&self) -> &str {
-        return &self.format;
+        return "blob";
     }
 }
 
-pub fn object_read(git_repo: &GitRepository, sha: &str) -> Result<Option<Box<dyn GitObject>>> {
+pub fn object_read(git_repo: &GitRepository, sha: &str) -> Result<Box<dyn GitObject>> {
     let path = repo_file(git_repo, &[&sha[0..2], &sha[2..]], false)?;
     if !path.is_file() {
-        return Ok(None);
+        bail!("Object {} not found", sha);
     }
-    use std::io::prelude::*;
     let f = fs::File::open(path)?;
     let mut d = GzDecoder::new(f);
     // let mut decompressed = Vec::new();
@@ -256,21 +282,21 @@ pub fn object_read(git_repo: &GitRepository, sha: &str) -> Result<Option<Box<dyn
     }
 
     match obj_type {
-        "commit" => Ok(Some(Box::new(GitCommit::build(reader)?))),
-        "tree" => Ok(Some(Box::new(GitTree::build(reader)?))),
-        "tag" => Ok(Some(Box::new(GitTag::build(reader)?))),
-        "blob" => Ok(Some(Box::new(GitBlob::build(reader)?))),
+        "commit" => Ok(GitCommit::deserialize(&data)),
+        "tree" => Ok(GitTree::deserialize(&data)),
+        "tag" => Ok(GitTag::deserialize(&data)),
+        "blob" => Ok(GitBlob::deserialize(&data)),
         _ => bail!("Unknown object type {}", obj_type),
     }
 }
 
-fn object_write(obj: impl GitObject, git_repo: Option<&GitRepository>) -> Result<Vec<u8>> {
+fn object_write(obj: &dyn GitObject, git_repo: Option<GitRepository>) -> Result<Vec<u8>> {
     let data = obj.serialize();
     let mut result = Vec::new();
     result.extend_from_slice(obj.format().as_bytes());
     result.push(b' ');
     result.extend_from_slice(&data.len().to_be_bytes());
-    result.push(b'0');
+    result.push(0);
     result.extend_from_slice(&data);
 
     use sha1::{Digest, Sha1};
@@ -280,7 +306,7 @@ fn object_write(obj: impl GitObject, git_repo: Option<&GitRepository>) -> Result
     let result = hasher.finalize();
     if let Some(repo) = git_repo {
         let path = repo_file(
-            repo,
+            &repo,
             &[
                 "objects",
                 std::str::from_utf8(&result[0..2])?,
@@ -297,4 +323,23 @@ fn object_write(obj: impl GitObject, git_repo: Option<&GitRepository>) -> Result
         }
     }
     Ok(result.to_vec())
+}
+
+pub(crate) fn object_find(git_repo: &GitRepository, sha: String, tp: ObjectType) -> Result<String> {
+    return Ok(sha);
+}
+
+pub(crate) fn object_hash(
+    git_repo: Option<GitRepository>,
+    file: PathBuf,
+    object_type: ObjectType,
+) -> Result<Vec<u8>> {
+    let data = std::fs::read(file)?;
+    let obj = match object_type {
+        ObjectType::Blob => GitBlob::deserialize(&data),
+        ObjectType::Tree => GitTree::deserialize(&data),
+        ObjectType::Commit => GitCommit::deserialize(&data),
+        ObjectType::Tag => GitTag::deserialize(&data),
+    };
+    return object_write(obj.as_ref(), git_repo);
 }
